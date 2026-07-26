@@ -7,12 +7,12 @@ This document summarizes the SaaS database schema explored during the schema rec
 | Table | Approx. Rows | Purpose |
 |-------|-------------:|---------|
 | events | 53,534 | Stores user-level product activity and feature usage events. |
-| legacy_events | 15,028 | Historical event data retained for reference; not used in the current unified schema. |
+| legacy_events | 15,028 | Historical event data retained for reference. |
 | payment_attempts | 5,690 | Records every payment attempt, including failures and retries. |
 | invoices | 4,201 | Stores billing invoices generated for subscriptions. |
 | subscription_events | 3,741 | Event log capturing subscription lifecycle changes such as upgrades, downgrades, cancellations, and renewals. |
 | email_sends | 3,385 | Tracks lifecycle, marketing, and transactional emails sent to users. |
-| experiment_assignments | 3,200 | Maps users to experiment variants for A/B testing. |
+| experiment_assignments | 3,200 | Maps users to experiment variants for testing and product experiments. |
 | users | 2,556 | Stores user account information and links users to accounts. |
 | subscriptions | 2,113 | Contains subscription details including plan, status, MRR, and billing information. |
 | seats | 1,556 | Tracks seat assignments for multi-user (B2B) accounts. |
@@ -21,12 +21,12 @@ This document summarizes the SaaS database schema explored during the schema rec
 | support_tickets | 1,249 | Stores customer support requests and related metadata. |
 | legacy_subscriptions | 500 | Legacy subscription records retained for migration reference. |
 | legacy_support_tickets | 300 | Historical support ticket data from the legacy system. |
-| trials | 250 | Stores trial subscription information and conversion details. |
+| trials | 250 | Stores trial-related information used to track trial periods and conversions. |
 | legacy_companies | 200 | Legacy company records retained for historical reference. |
 | features | 50 | Master list of product features used for product analytics. |
 | experiment_variants | 8 | Defines the variants belonging to each experiment. |
 | plans | 8 | Stores subscription plans and pricing tiers. |
-| experiments | 4 | Stores A/B experiment definitions and metadata. |
+| experiments | 4 | Stores experiment definitions and metadata. |
 
 ---
 
@@ -76,7 +76,7 @@ This document summarizes the SaaS database schema explored during the schema rec
 | cancellation_reason | Customer-provided reason for cancellation, if available. |
 | account_id | References the account associated with the subscription. |
 | seat_count | Number of seats/licenses included in the subscription. |
-| plan_id | References the subscription plan in the `plans` table. |
+| plan_id | References the subscription plan in the plans table. |
 
 ### subscription_events
 
@@ -105,6 +105,42 @@ This document summarizes the SaaS database schema explored during the schema rec
 | billing_interval | Billing frequency of the plan (for example, monthly or yearly). |
 
 
+### events
+
+| Column | Description |
+|--------|-------------|
+| event_id | Unique identifier for each product event. |
+| user_id | User who performed the event. May be NULL for some events. |
+| event_type | Type of product activity recorded (for example: login, feature_use, dashboard_view, api_call, export, settings_change, invite_sent, report_view). |
+| occurred_at | Timestamp when the event occurred. |
+| properties | Additional event metadata stored as text. |
+| account_id | Account associated with the event. |
+| feature_id | Identifier of the feature associated with the event when available. Some events do not have a populated feature_id. |
+
+
+### features
+
+| Column | Description |
+|--------|-------------|
+| feature_id | Unique identifier for each product feature. |
+| feature_name | Name of the product feature available to users. |
+| category | Functional category of the feature (for example, core or analytics). |
+| release_date | Date and time when the feature was introduced into the product. |
+
+### payment_attempts
+
+| Column | Description |
+|--------|-------------|
+| attempt_id | Unique identifier for each payment attempt. |
+| invoice_id | Invoice associated with the payment attempt. |
+| user_id | User associated with the payment attempt, when applicable. |
+| subscription_id | Subscription linked to the payment attempt. |
+| amount | Amount attempted for collection. |
+| status | Outcome of the payment attempt (for example, failed or succeeded). |
+| failure_reason | Reason the payment failed, if applicable. |
+| attempt_number | Sequential retry number for the payment attempt. |
+| attempted_at | Timestamp when the payment attempt occurred. |
+| account_id | Account associated with the payment attempt. |
 ---
 
 ## C. Verified Relationships
@@ -121,7 +157,6 @@ This document summarizes the SaaS database schema explored during the schema rec
 
 ## D. ER Diagram
 
-```text
 accounts
 │
 ├── users
@@ -136,11 +171,9 @@ accounts
 │              ├── subscription_id → subscriptions.subscription_id
 │              └── account_id → accounts.account_id
 │
-└── seats
-
 plans
 └── subscriptions
-```
+
 ---
 
 ## E. Data Quality Findings
@@ -151,17 +184,18 @@ plans
    - No unexpected status values were found.
 
 2. subscriptions.plan
-   - Detected inconsistent casing in plan names (e.g., `pro` vs `Pro`, `enterprise` vs `Enterprise`).
-   - Observed both `pro` and `professional`, which may represent inconsistent naming conventions or distinct product tiers. Additional business validation is required before standardizing these values.
+   - Detected inconsistent casing in plan names (e.g., pro vs Pro, enterprise vs Enterprise).
+   - The value professional also exists alongside pro, but its business meaning cannot be determined from the data alone. Additional business validation is required before treating these values as duplicates or standardizing them.
      
 3. accounts.account_type
-   - Two account types were identified: `self_serve` and `b2b`.
-   - Values are consistently formatted with no inconsistent casing or duplicate spellings.
+   - Two account types were identified: self_serve and b2b.
+   - Querying the data showed that the values are consistently formatted, with no inconsistent casing or duplicate spellings observed.
 
 4. subscription_events.event_type
    - Seven distinct event types were identified: subscription_started, trial_started, cancelled, plan_changed, seat_add, trial_converted, and addon_attach.
-   - Values are consistently formatted using lowercase and underscores.
+   - Querying the data showed that all event types are consistently formatted using lowercase letters and underscores.
    - No inconsistent casing or duplicate event names were observed.
+
 
 ---
 
@@ -170,37 +204,35 @@ plans
 ### 1. What is the grain of the subscriptions table?
 
 **Answer:**
-The subscriptions table contains two different grains:
 
-- User-level subscriptions: 2,000
-- Account-level subscriptions: 113
+The subscriptions table does not contain one row per account. Querying the data showed that some accounts have multiple subscription records (for example, account 100628 has eight records), indicating that historical subscription information is retained.
 
-User-level subscriptions are linked to individual users, whereas account-level subscriptions belong to an account rather than a specific user.
+The ownership model also differs by account type:
+
+- All 2,000 self-serve subscriptions have a populated user_id and a seat_count of 1.
+- All 113 B2B subscriptions have user_id = NULL, with seat_count values ranging from 1 to 18.
+
+This indicates that self-serve subscriptions are user-level, while B2B subscriptions are account-level. The presence of multiple subscription records for the same account suggests that the table stores subscription history rather than only the current active subscription.
 
 ---
 
 ### 2. Do self-serve subscriptions always have one seat?
 
 **Answer:**
-Yes.
 
-All 2,000 user-level subscriptions have a seat count of 1, confirming that self-serve subscriptions are single-seat subscriptions.
+Yes. Querying the data showed that all 2,000 self-serve subscriptions have a seat_count of 1. No self-serve subscription was found with more than one seat, indicating that self-serve subscriptions are single-seat subscriptions in this dataset.
 
 ---
 
 ### 3. Do account-level subscriptions support multiple seats?
 
 **Answer:**
-Yes.
 
-Among the 113 account-level subscriptions:
-
-- 108 have multiple seats.
-- 5 have a single seat.
-
-This suggests that account-level subscriptions are primarily designed for multi-seat (B2B) customers, although a small number of account-level subscriptions currently have only a single seat.
+Yes. Querying the data showed that 108 out of 113 B2B subscriptions have more than one seat, while only 5 have a single seat. This indicates that B2B subscriptions are primarily designed to support multiple users, although a small number of account-level subscriptions currently have only one seat.
 
 ### 4. What subscription statuses exist?
+
+**Answer:**
 
 The subscriptions table contains five lifecycle statuses:
 
@@ -210,9 +242,12 @@ The subscriptions table contains five lifecycle statuses:
 - past_due
 - paused
 
-The values are consistently formatted with no duplicate spellings or inconsistent casing.
+Querying the data showed that these values are consistently formatted, with no inconsistent casing or duplicate spellings observed.
+
 
 ### 5. What subscription event types exist?
+
+**Answer:**
 
 Seven event types were identified:
 
@@ -227,6 +262,8 @@ Seven event types were identified:
 The values are consistently formatted using lowercase and underscores.
 
 ### 6. What billing intervals are available?
+
+**Answer:**
 
 The plans table contains two billing intervals:
 
