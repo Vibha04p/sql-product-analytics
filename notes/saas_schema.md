@@ -274,6 +274,31 @@ Both billing frequencies are represented equally, indicating that the dataset su
 
 ---
 
+## G. Sample Queries
+
+1. How many active paying accounts are there right now?
+
+SELECT COUNT(DISTINCT account_id) AS active_paying_accounts
+FROM saas.subscriptions
+WHERE LOWER(status) = 'active'
+  AND LOWER(plan) <> 'free';
+
+
+2. What's the breakdown of accounts by plan?
+
+SELECT lower (plan) as plan
+,count (distinct account_id) as accounts
+from saas.subscriptions
+group by plan
+order by accounts desc;
+
+3. Show 10 sample subscription events in chronological order.
+
+SELECT *
+FROM saas.subscription_events
+ORDER BY event_time
+LIMIT 10;
+
 ## Summary
 
 The schema reconnaissance confirmed the primary business entities, validated key relationships, identified minor data quality issues, and established the distinction between user-level and account-level subscriptions. These findings provide the foundation for the SQL product analytics tasks that follow.
