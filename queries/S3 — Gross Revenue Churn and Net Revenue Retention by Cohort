@@ -1,0 +1,109 @@
+--Query S3 — Gross Revenue Churn and Net Revenue Retention by Cohort
+--Business Question
+--How much of the MRR from each monthly cohort is retained after 12 months, and how much additional revenue is generated through customer expansion?
+
+--What this tells us
+--Most cohorts have GRR below 80%, indicating retention is inconsistent and churn is a major contributor to revenue loss. A few cohorts achieve NRR above 110%, showing that expansion revenue from existing customers can more than offset these losses.
+--PM Action
+--The business is primarily in the low-GRR (<80%) world, so improving customer retention should be the top priority, as growth spend alone won't solve the revenue leakage. For cohorts with NRR >110%, continue investing in Customer Success and upsell initiatives since expansion is driving growth.
+--Sanity Check
+--GRR is always ≤ 100%, NRR exceeds 100% only when expansion outweighs revenue loss, and GRR + (Churn MRR ÷ Starting MRR) ≈ 1.0 for cohorts without contraction, confirming the calculations are consistent.
+
+
+WITH first_paid_event AS (
+    SELECT
+        account_id
+        , DATE_TRUNC('month', event_time) AS cohort_month
+        , event_time AS cohort_start_date
+        , mrr_delta AS starting_mrr
+        , ROW_NUMBER() OVER (
+            PARTITION BY account_id
+            ORDER BY event_time
+        ) AS rn
+    FROM saas.subscription_events
+    WHERE event_type IN ('subscription_started', 'trial_converted')
+	AND mrr_delta >0
+)
+
+, first_paid AS (
+    SELECT
+    account_id
+    , cohort_month
+    , cohort_start_date
+    , starting_mrr
+    FROM first_paid_event
+    WHERE rn = 1
+	
+)
+
+
+,mrr_after_12_months AS (
+    SELECT
+    fp.account_id
+    , fp.cohort_month
+    , fp.cohort_start_date
+    , fp.starting_mrr 
+    , SUM(s.mrr) AS mrr_after_12_months
+    FROM first_paid fp
+    LEFT JOIN saas.subscriptions s
+    ON fp.account_id = s.account_id
+    AND fp.cohort_start_date + INTERVAL '12 months'
+    BETWEEN s.start_date
+    AND COALESCE(s.end_date, DATE '9999-12-31')
+GROUP BY
+    fp.account_id,
+    fp.cohort_month,
+    fp.cohort_start_date,
+    fp.starting_mrr
+)
+
+, mrr_metrics as (
+select *
+,CASE
+    WHEN mrr_after_12_months > 0
+    THEN LEAST(starting_mrr, mrr_after_12_months)
+    ELSE 0
+END AS retained_mrr_12m
+,CASE
+    WHEN mrr_after_12_months > starting_mrr
+    THEN mrr_after_12_months - starting_mrr
+    ELSE 0
+END AS expansion_mrr_12m
+, CASE
+    WHEN mrr_after_12_months < starting_mrr
+         AND mrr_after_12_months > 0
+    THEN starting_mrr - mrr_after_12_months
+    ELSE 0
+END AS contraction_mrr_12m
+,CASE
+    WHEN mrr_after_12_months IS NULL
+         OR mrr_after_12_months = 0
+    THEN starting_mrr
+    ELSE 0
+END AS churn_mrr_12m
+from mrr_after_12_months)
+SELECT *
+FROM mrr_metrics
+WHERE cohort_month = '2022-06-01';
+
+SELECT
+    cohort_month
+    , SUM(starting_mrr) AS cohort_starting_mrr
+    , SUM(retained_mrr_12m) AS retained_mrr_12m
+    , SUM(expansion_mrr_12m) AS expansion_mrr_12m
+    , SUM(contraction_mrr_12m) AS contraction_mrr_12m
+    , SUM(churn_mrr_12m) AS churn_mrr_12m
+	,(SUM(starting_mrr) - SUM(contraction_mrr_12m) - SUM(churn_mrr_12m))*1.0/NULLIF(SUM(starting_mrr), 0) AS GRR
+,(SUM(starting_mrr)+ SUM(expansion_mrr_12m) - SUM(contraction_mrr_12m) - SUM(churn_mrr_12m))*1.0/NULLIF(SUM(starting_mrr), 0) AS NRR
+FROM mrr_metrics
+GROUP BY cohort_month
+ORDER BY cohort_month;
+SELECT
+    subscription_id,
+    plan,
+    start_date,
+    end_date,
+    mrr
+FROM saas.subscriptions
+WHERE account_id = 100247
+ORDER BY start_date;
