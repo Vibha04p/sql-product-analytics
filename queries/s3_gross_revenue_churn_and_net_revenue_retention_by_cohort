@@ -75,16 +75,14 @@ END AS expansion_mrr_12m
     THEN starting_mrr - mrr_after_12_months
     ELSE 0
 END AS contraction_mrr_12m
-,CASE
+, CASE
     WHEN mrr_after_12_months IS NULL
          OR mrr_after_12_months = 0
     THEN starting_mrr
     ELSE 0
 END AS churn_mrr_12m
 from mrr_after_12_months)
-SELECT *
-FROM mrr_metrics
-WHERE cohort_month = '2022-06-01';
+
 
 SELECT
     cohort_month
@@ -98,12 +96,3 @@ SELECT
 FROM mrr_metrics
 GROUP BY cohort_month
 ORDER BY cohort_month;
-SELECT
-    subscription_id,
-    plan,
-    start_date,
-    end_date,
-    mrr
-FROM saas.subscriptions
-WHERE account_id = 100247
-ORDER BY start_date;
