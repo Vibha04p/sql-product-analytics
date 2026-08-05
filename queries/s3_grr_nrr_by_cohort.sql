@@ -8,6 +8,8 @@
 --The business is primarily in the low-GRR (<80%) world, so improving customer retention should be the top priority, as growth spend alone won't solve the revenue leakage. For cohorts with NRR >110%, continue investing in Customer Success and upsell initiatives since expansion is driving growth.
 --Sanity Check
 --GRR is always ≤ 100%, NRR exceeds 100% only when expansion outweighs revenue loss, and GRR + (Churn MRR ÷ Starting MRR) ≈ 1.0 for cohorts without contraction, confirming the calculations are consistent.
+--Note:
+--Recent cohorts should be interpreted with caution because they have not yet completed a full 12-month observation window. Their GRR and NRR values reflect the available observation period and are therefore not directly comparable with mature cohorts.
 
 
 WITH first_paid_event AS (
@@ -75,7 +77,7 @@ END AS expansion_mrr_12m
     THEN starting_mrr - mrr_after_12_months
     ELSE 0
 END AS contraction_mrr_12m
-, CASE
+,CASE
     WHEN mrr_after_12_months IS NULL
          OR mrr_after_12_months = 0
     THEN starting_mrr
@@ -96,3 +98,4 @@ SELECT
 FROM mrr_metrics
 GROUP BY cohort_month
 ORDER BY cohort_month;
+
