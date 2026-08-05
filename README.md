@@ -58,10 +58,6 @@ notes/
 
 ![Checkout Funnel](images/e2_checkout_funnel.png)
 
-### SaaS Revenue Retention
-
-![GRR & NRR](images/s3_grr_nrr.png)
-
 ### Expansion Revenue
 
 ![Expansion Revenue](images/s5_expansion_revenue.png)
