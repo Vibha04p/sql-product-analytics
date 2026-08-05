@@ -44,4 +44,3 @@ signup_week
 ,percentile_cont(0.9) WITHIN GROUP(order by minutes_to_activation ) as p90_minutes_to_activation
 from activation_metrics
 group by signup_week;
-
