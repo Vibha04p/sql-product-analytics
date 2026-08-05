@@ -272,6 +272,37 @@ The plans table contains two billing intervals:
 
 Both billing frequencies are represented equally, indicating that the dataset supports monthly and annual subscription plans.
 
+
+### 7. How is MRR stored and why do snapshot and event log need reconciliation?
+
+**Answer:**
+
+The dataset stores Monthly Recurring Revenue (MRR) in two different ways.
+
+The subscriptions table stores the current MRR value for each subscription as a snapshot, while the subscription_events table stores individual MRR changes using the mrr_delta column. Positive values represent new revenue or expansion, while negative values represent contraction or churn.
+
+Because one table stores point-in-time subscription values and the other stores incremental changes, the two representations should reconcile when the event history is aggregated correctly. Any material difference between the snapshot and cumulative event movements may indicate missing events, duplicate records, or incorrect event classification.
+
+### 8. How are trial and paid subscriptions represented?
+
+**Answer:**
+
+Trial activity is recorded separately from paid subscriptions.
+
+The subscription_events table contains trial_started and trial_converted events. Trial_started represents a zero-revenue trial and is excluded from MRR calculations, whereas trial_converted generates paid recurring revenue and is classified as New MRR unless the account has previously churned.
+
+### 9. What timezone is used for timestamps?
+
+**Answer:**
+
+The dataset stores timestamps using timestamp values, but no explicit timezone information is documented in the schema. Based on the available tables alone, the timezone cannot be confirmed and should be validated with the data owner before performing production reporting or daily aggregations.
+
+### 10. Is there evidence of soft deletes?
+
+**Answer:**
+
+No dedicated soft-delete flag (such as is_deleted or deleted_at) was identified in the core SaaS tables reviewed during schema reconnaissance. Historical lifecycle changes are represented through status values and event history rather than soft-delete columns.
+
 ---
 
 ## G. Sample Queries
@@ -298,6 +329,7 @@ SELECT *
 FROM saas.subscription_events
 ORDER BY event_time
 LIMIT 10;
+
 
 ## Summary
 
